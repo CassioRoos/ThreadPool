@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -16,24 +17,33 @@ type point2D struct {
 	y int
 }
 
-var(
-	r = regexp.MustCompile(`\((\d*),(\d*)\)`)
+const (
+	numberOfThreads = 10
+	bufferSize      = 500
 )
 
-func findArea(pointStr string){
-	var points []point2D
-	for _, p := range r.FindAllStringSubmatch(pointStr,-1){
-		x,_ := strconv.Atoi(p[1])
-		y,_ := strconv.Atoi(p[2])
-		points = append(points, point2D{x,y})
-	}
+var (
+	r         = regexp.MustCompile(`\((\d*),(\d*)\)`)
+	waitGroup = sync.WaitGroup{}
+)
 
-	area := 0.0
-	for i:= 0; i < len(points);i++{
-		a, b := points[i], points[(i+1)%len(points)]
-		area += float64(a.x*b.y) - float64(a.y*b.x)
+func findArea(inputChannel chan string) {
+	for pointStr := range inputChannel {
+		var points []point2D
+		for _, p := range r.FindAllStringSubmatch(pointStr, -1) {
+			x, _ := strconv.Atoi(p[1])
+			y, _ := strconv.Atoi(p[2])
+			points = append(points, point2D{x, y})
+		}
+
+		area := 0.0
+		for i := 0; i < len(points); i++ {
+			a, b := points[i], points[(i+1)%len(points)]
+			area += float64(a.x*b.y) - float64(a.y*b.x)
+		}
+		fmt.Println(math.Abs(area) / 2.0)
 	}
-	fmt.Println(math.Abs(area)/2.0)
+	waitGroup.Done()
 }
 
 func main() {
@@ -43,14 +53,20 @@ func main() {
 		panic(err)
 	}
 	text := string(dat)
-
-	start := time.Now()
-	for _, line := range strings.Split(text, "\n"){
-		//fmt.Println(line)
-		findArea(line)
+	inputChannel := make(chan string, bufferSize)
+	for i := 0; i < numberOfThreads; i++ {
+		go findArea(inputChannel)
 	}
+	waitGroup.Add(numberOfThreads)
+	start := time.Now()
+	for _, line := range strings.Split(text, "\n") {
+		//fmt.Println(line)
+		//findArea(line)
+		inputChannel <- line
+	}
+	close(inputChannel)
+	waitGroup.Wait()
 	elapsed := time.Since(start)
 	fmt.Print("Took", elapsed)
-
 
 }
